@@ -2,6 +2,46 @@
 openModule /Eventually/;
 
 
+typedef
+/
+  datatype
+    intersect (i : level) .
+    forall (a : U i) (strm : U i).
+    U i
+  of
+    stream : type =
+    | Nil : stream 
+    | Cons : a -> future strm -> stream
+/;
+
+define /stream a/
+/
+  rec X . 
+//
+  intersect i . U i -> U i
+/;
+
+
+typedef
+/
+  datatype
+    intersect (i : level) .
+    forall (a : U i) .
+    U i
+  of
+    tree : nat -> type =
+    | Empty : tree 0
+    | Cont : (tree 0 -> tree 0) -> tree 0
+    | Node : forall (n : nat) . a -> forest n -> tree (succ n)
+    and
+    forest : nat -> type =
+    | Nil : forest 0
+    | Cons : forall (m n : nat) . tree m -> forest n -> forest (m + n)
+/;
+
+
+
+
 define /stream a/
 /
   rec X . a & future X

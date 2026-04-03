@@ -1,0 +1,722 @@
+
+(* File.load "../code/divide.isto"; *)
+
+openModule /Bool/;
+openModule /Eventually/;
+(* openModule /Divide/; *)
+
+
+define /stream a/
+/
+  rec X . a & future (ev X)
+//
+  intersect i . U i -> U i
+/;
+
+inference.
+unfold /stream/.
+typecheck.
+qed ();
+
+
+define /later_app {a b} ff fx/
+/
+  let next f = ff in
+  let next x = fx in
+  next (f x)
+//
+  intersect (i : level) . forall (a b : U i) . future (a -> b) -> future a -> future b
+/;
+
+inference.
+introOf /i a b ff fx/.
+unfold /later_app/.
+typecheck.
+qed ();
+
+lemma "later_app_hom"
+/
+  intersect (i : level) . forall (a b : U i) (f : a -> b) (x : a) . 
+    `later_app a b (next f) (next x) = next (f x) : future b
+/;
+
+intro /i a b f x/.
+unfold /later_app/.
+reflexivity.
+qed ();
+
+
+
+define /cons {a} h t/
+/
+  (h, next t)
+//
+  intersect i . forall (a : U i) .
+    a -> ev (stream a) -> stream a
+/;
+
+inference.
+introOf /i a h t/.
+unfold /cons/.
+unrollTypeUniv /stream with i/.
+typecheck.
+qed ();
+
+
+
+define /fst {a} s/
+/
+  s #1
+//
+  intersect i . forall (a : U i) .
+    stream a -> a
+/;
+
+inference.
+unfold /fst/.
+typecheck.
+reintro /s/.
+unrollTypeUniv /stream with i in s/.
+typecheck.
+qed ();
+
+
+
+define /snd {a} s/
+/
+  laterf (s #2)
+//
+  intersect i . forall (a : U i) .
+    stream a -> ev (stream a)
+/;
+
+inference.
+unfold /snd/.
+typecheck.
+reintro /s/.
+unrollTypeUniv /stream with i in s/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  fst _ (cons _ x _) --> x ;
+  snd _ (cons _ _ s) --> later s ;
+
+  unfolding fst snd cons later
+/;
+
+
+
+define /count/
+/
+  ffix (fn (cf : future (nat -> stream nat)) n . 
+          let next c = cf
+          in
+            cons n (later (now (c (succ n)))))
+//
+  nat -> stream nat
+/;
+
+unfold /count/.
+typecheck.
+qed ();
+
+
+
+val red =
+makeReduction
+/
+  count n --> cons nat n (later (now (count (succ n)))) ;
+
+  unfolding count
+  unrolling ffix
+/;
+
+Database.setUnroll (parseConstant /count/) (Reduction.user red);
+
+
+
+define /Foralls {a} P/
+/
+  ffix (fn Ff s .
+          let next F = Ff
+          in
+            P (fst s)
+            & (bindevt t = `snd a s
+               in
+                 F t))
+//
+  intersect i . forall (a : U i) .
+    (a -> U i) -> stream a -> U i
+/;
+
+inference.
+introOf /i a P/.
+unfold /Foralls/.
+fold /manual (`bindevt _ _) within _ _/.
+typecheck.
+reintro /F s/.
+unfold /snd/.
+reduce //.
+unrollTypeUniv /stream with i in s/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  Foralls a P (cons _ h te) --> P h & future (bindevt t = te in Foralls a P t) ;
+
+  unfolding Foralls
+  unrolling ffix
+/;
+
+
+
+lemma "Foralls_implies"
+/
+  forall i (a : U i) (P Q : a -> U i) (s : stream a) .
+    (forall x . P x -> Q x)
+    -> Foralls P s
+    -> Foralls Q s
+/;
+
+inference.
+intro /i a P Q s Himpl/.
+revert /s/.
+apply /ffix/.
+intro /[IH] s Hs/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [t]/.
+fold /cons h t in Hs in concl/.
+reduce /Hs concl/.
+destruct /Hs/ /Hh [Ht]/.
+split >> auto.
+split.
+witness /bindevt_map _# 5 __ Ht/.
+auto.
+qed ();
+
+
+
+lemma "Foralls_combine"
+/
+  forall i (a : U i) (P Q : a -> U i) (s : stream a) .
+    Foralls P s
+    -> Foralls Q s
+    -> Foralls (fn x . P x & Q x) s
+/;
+
+inference.
+intro /i a P Q/.
+apply /ffix/.
+intro /[IH] s HP HQ/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [t]/.
+fold /cons h t in HP in HQ in concl/.
+reduce /HP HQ concl/.
+destruct /HP/ /HPh [HPt]/.
+destruct /HQ/ /HQh [HQt]/.
+split >> auto.
+split.
+so /bindevt_and _# 5 HPt HQt/ /Ht/.
+witness /bindevt_map _# 5 __ Ht/.
+reduce //.
+intro /s (HPs HQs)/.
+apply /IH/ >> auto.
+qed ();
+
+
+
+lemma "count_lower_bound"
+/
+  forall n .
+    Foralls (fn m . n <= m) (count n)
+/;
+
+inference.
+intro /n/.
+assert /forall n' . 
+          n <= n'
+          -> Foralls (fn m . n <= m) (count n')/ /Hprop/ >>> [inference, idtac].
+1:{
+  apply /Hprop/.
+  reflexivity.
+  }
+apply /ffix/.
+intro /[IH] n' Hleq/.
+unroll /count/.
+reduce /concl/.
+split.
+  {
+  auto.
+  }
+split.
+split.
+apply /IH/.
+omega.
+qed ();
+
+
+
+define /filters {a} p/
+/
+  ffix (fn filtf s .
+          let next filt = filtf
+          in
+            if p (fst s) then
+              now (cons 
+                     (fst s) 
+                     (bindev t = snd s
+                      in
+                        later (filt t)))
+            else
+              (bindev t = snd s
+               in
+                 later (filt t)))
+//
+  intersect i . forall (a : U i) . (a -> bool) -> stream a -> ev (stream a)
+/;
+
+inference.
+unfold /filters/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  filters a p (cons _ h te) -->
+    if p h then 
+      now (cons a 
+             h
+             (later
+                (bindev t = te
+                 in
+                   later (filters a p t))))
+      else
+        later
+          (bindev t = te
+           in
+             later (filters a p t)) ;
+
+  unfolding filters
+  unrolling ffix
+/;
+
+
+
+lemma "Foralls_filters"
+/
+  forall i (a : U i) (p : a -> bool) (s : stream a) .
+    bindevt s' = filters p s
+    in
+      Foralls (fn x . istrue (p x)) s'
+/;
+
+inference.
+intro /i a p/.
+apply /ffix/.
+intro /[IH] s/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [t]/.
+fold /cons h t/.
+reduce //.
+boolCase /p h/ /Hp/.
+  {
+  split >> auto.
+  split.
+  split.
+  rewrite /-> bindevt_assoc/.
+  reduce //.
+  apply /bindevt_simple/.  
+  reduce //.
+  intro /s/.
+  auto.
+  }
+
+  {
+  split.
+  rewrite /-> bindevt_assoc/.
+  apply /bindevt_simple/.
+  reduce //.
+  intro /s/.
+  split.
+  apply /IH/.
+  }
+qed ();
+
+
+
+lemma "Foralls_filters_preserve"
+/
+  forall i (a : U i) (p : a -> bool) (Q : a -> U i) (s : stream a) .
+    Foralls Q s
+    -> bindevt s' = filters p s
+       in
+         Foralls Q s'
+/;
+
+inference.
+intro /i a p Q/.
+apply /ffix/.
+intro /[IH] s Hs/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [te]/.
+fold /cons h te in Hs in concl/.
+reduce /Hs concl/.
+destruct /Hs/ /Hh [Hte]/.
+boolCase /p h/ /Hp/.
+  {
+  split >> auto.
+  split.
+  split.
+  rewrite /-> bindevt_assoc/.
+  reduce //.
+  witness /bindevt_map _# 5 __ Hte/.
+  reduce //.
+  auto.
+  }
+
+  {
+  split.
+  rewrite /-> bindevt_assoc/.
+  reduce //.
+  witness /bindevt_map _# 5 __ Hte/.
+  reduce //.
+  intro /s Hs/.
+  split.
+  apply /IH/ >> auto.
+  }
+qed ();
+
+
+
+define /sieve {a} d/
+/
+  ffix (fn sief s .
+          let next sie = sief
+          in
+            cons 
+              (fst s)
+              (bindev t = snd s in
+               bindev t' = filters (d (fst s)) t
+               in
+                 later (now (sie t'))))
+//
+  intersect i . forall (a : U i) . (a -> a -> bool) -> stream a -> stream a
+/;
+
+inference.
+unfold /sieve/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  sieve a d (cons _ h te) -->
+    cons a
+      h
+      (later
+         (bindev t = te in
+          bindev t' = filters a (d h) t 
+          in 
+            later (now (sieve a d t')))) ;
+
+  unfolding sieve
+  unrolling ffix
+/;
+
+
+
+lemma "sieve_preserve"
+/
+  forall i (a : U i) (P : a -> U i) (d : a -> a -> bool) (s : stream a) .
+    Foralls P s
+    -> Foralls P (sieve d s)
+/;
+
+inference.
+intro /i a P d/.
+apply /ffix/.
+intro /[IH] s Hs/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [t]/.
+fold /cons h t in Hs in concl/.
+reduce /Hs concl/.
+destruct /Hs/ /Hh [Ht]/.
+split >> auto.
+split.
+split.
+rewrite /-> bindevt_assoc/.
+reduce //.
+witness /bindevt_map _# 5 __ Ht/.
+reduce //.
+intro /s Hs/.
+rewrite /-> bindevt_assoc/.
+reduce //.
+so /Foralls_filters_preserve _ _ (d h) _ _ Hs/ /H/.
+witness /bindevt_map _# 5 __ H/.
+reduce //.
+auto.
+qed ();
+
+
+
+(* You would not ordinarily want to do this, since it loops on anything but literals. *)
+(* reductions
+/
+  mod a b -->
+    if a <? b then
+      a
+    else
+      mod (a - b) b ;
+
+  unrolling mod
+/;
+
+ *)
+
+(* val count = unroll /count/ >> reduce //;
+val dividesb = unfold /dividesb/ >> reduce //;
+
+
+
+lemma "primes"
+/
+  sieve (fn x y . notb (dividesb x y)) (count 2) : stream nat
+/;
+
+count.
+
+count.
+dividesb.
+
+count.
+dividesb.
+count.
+dividesb.
+dividesb.
+
+typecheck.
+qed ();
+
+
+
+(* Now: do all this again with filters defined incorrectly. *)
+
+
+(* Forces snd s eagerly. *)
+define /filters' {a} p/
+/
+  ffix (fn filtf s .
+          let next filt = filtf in
+          bindev t = snd s
+          in
+            if p (fst s) then
+              now (cons 
+                     (fst s) 
+                     (later (filt t)))
+            else
+              later (filt t))
+//
+  intersect i . forall (a : U i) . (a -> bool) -> stream a -> ev (stream a)
+/;
+
+inference.
+unfold /filters'/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  filters' a p (cons _ h te) -->
+    later
+      (bindev t = te
+       in
+         if p h then 
+           now (cons a 
+                  h
+                  (later (filters' a p t)))
+         else
+           later (filters' a p t)) ;
+
+  unfolding filters'
+  unrolling ffix
+/;
+
+
+
+lemma "Foralls_filters'"
+/
+  forall i (a : U i) (p : a -> bool) (s : stream a) .
+    bindevt s' = filters' p s
+    in
+      Foralls (fn x . istrue (p x)) s'
+/;
+
+inference.
+intro /i a p/.
+apply /ffix/.
+intro /[IH] s/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [te]/.
+fold /cons h te/.
+reduce //.
+split.
+rewrite /-> bindevt_assoc/.
+reduce //.
+apply /bindevt_simple/.
+reduce //.
+intro /t/.
+boolCase /p h/ /Hp/ >> auto.
+qed ();
+
+
+
+lemma "Foralls_filters'_preserve"
+/
+  forall i (a : U i) (p : a -> bool) (Q : a -> U i) (s : stream a) .
+    Foralls Q s
+    -> bindevt s' = filters' p s
+       in
+         Foralls Q s'
+/;
+
+inference.
+intro /i a p Q/.
+apply /ffix/.
+intro /[IH] s Hs/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [te]/.
+fold /cons h te in Hs in concl/.
+reduce /Hs concl/.
+destruct /Hs/ /Hh [Hte]/.
+split.
+rewrite /-> bindevt_assoc/.
+reduce //.
+witness /bindevt_map _# 5 __ Hte/.
+reduce //.
+intro /t Ht/.
+boolCase /p h/ /Hp/ >> auto.
+qed ();
+
+
+
+define /sieve' {a} d/
+/
+  ffix (fn sief s .
+          let next sie = sief
+          in
+            cons 
+              (fst s)
+              (bindev t = snd s in
+               bindev t' = filters' (d (fst s)) t
+               in
+                 later (now (sie t'))))
+//
+  intersect i . forall (a : U i) . (a -> a -> bool) -> stream a -> stream a
+/;
+
+inference.
+unfold /sieve'/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  sieve' a d (cons _ h te) -->
+    cons a
+      h
+      (later
+         (bindev t = te in
+          bindev t' = filters' a (d h) t 
+          in 
+            later (now (sieve' a d t')))) ;
+
+  unfolding sieve'
+  unrolling ffix
+/;
+
+
+
+lemma "sieve'_preserve"
+/
+  forall i (a : U i) (P : a -> U i) (d : a -> a -> bool) (s : stream a) .
+    Foralls P s
+    -> Foralls P (sieve' d s)
+/;
+
+inference.
+intro /i a P d/.
+apply /ffix/.
+intro /[IH] s Hs/.
+unrollTypeUniv /stream with i in s/.
+destruct /s/ /h [t]/.
+fold /cons h t in Hs in concl/.
+reduce /Hs concl/.
+destruct /Hs/ /Hh [Ht]/.
+split >> auto.
+split.
+split.
+rewrite /-> bindevt_assoc/.
+reduce //.
+witness /bindevt_map _# 5 __ Ht/.
+reduce //.
+intro /s Hs/.
+rewrite /-> bindevt_assoc/.
+reduce //.
+so /Foralls_filters'_preserve _ _ (d h) _ _ Hs/ /H/.
+witness /bindevt_map _# 5 __ H/.
+reduce //.
+auto.
+qed ();
+
+
+
+(* Computes too much. *)
+lemma "primes'"
+/
+  sieve' (fn x y . notb (dividesb x y)) (count 2) : stream nat
+/;
+
+count.
+
+count.
+dividesb.
+
+count. (* 4 *)
+dividesb.
+count. (* 5 *)
+dividesb.
+count. (* 6 *)
+dividesb.
+count. (* 7 *)
+dividesb.
+dividesb.
+
+typecheck.
+qed (); *)
+
+
+
+lemma "no_liveness"
+/
+  ev void
+/;
+
+apply /ffix/.
+intro /[IH]/.
+exact /later IH/.
+qed ();
