@@ -1,0 +1,269 @@
+
+openModule /Eventually/;
+
+
+define /stream a/
+/
+  rec X . a & future X
+//
+  intersect i . U i -> U i
+/;
+
+inference.
+unfold /stream/.
+typecheck.
+qed ();
+
+
+
+define /cons {a} h t/
+/
+  (h, t)
+//
+  intersect i . forall (a : U i) .
+    a -> future (stream a) -> stream a
+/;
+
+inference.
+unfold /cons/.
+typecheck.
+unrollType /stream/.
+typecheck.
+qed ();
+
+
+
+define /fst {a} s/
+/
+  s #1
+//
+  intersect i . forall (a : U i) .
+    stream a -> a
+/;
+
+inference.
+unfold /fst/.
+typecheck.
+reintro /s/.
+unrollType /stream in s/.
+typecheck.
+qed ();
+
+
+
+define /snd {a} s/
+/
+  s #2
+//
+  intersect i . forall (a : U i) .
+    stream a -> future (stream a)
+/;
+
+inference.
+unfold /snd/.
+typecheck.
+reintro /s/.
+unrollType /stream in s/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  fst _ (cons _ x _) --> x ;
+  snd _ (cons _ _ s) --> s ;
+
+  unfolding fst snd cons
+/;
+
+
+
+define /count/
+/
+  ffix (fn (c : future (nat -> stream nat)) n . 
+          let next c' = c
+          in
+            cons n (next (c' (succ n))))
+//
+  nat -> stream nat
+/;
+
+unfold /count/.
+typecheck.
+qed ();
+
+
+
+val red =
+makeReduction
+/
+  count n --> cons nat n (next (count (succ n))) ;
+  unfolding count
+  unrolling ffix
+/;
+
+Database.setUnroll (parseConstant /count/) (Reduction.user red);
+
+
+
+define /maps {a b} f/
+/
+  ffix (fn mf s .
+          let next m = mf in
+          let next t = snd s
+          in
+            cons
+              (f (fst s))
+              (next (m t)))
+//
+  intersect i . forall (a b : U i) .
+    (a -> b) -> stream a -> stream b
+/;
+
+inference.
+unfold /maps/.
+typecheck.
+qed ();
+
+
+
+reductions
+/
+  maps a b f (cons _ h t) -->
+    let next t' = t
+    in
+      cons b (f h) (next (maps a b f t')) ;
+
+  unfolding maps
+  unrolling ffix
+/;
+
+
+
+define /folds {a b} f/
+/
+  ffix (fn mf s .
+      let next m = mf in
+      let next t = snd s in
+      f (fst s) (next (m t)))
+//
+  intersect i . forall (a b : U i) .
+    (a -> future b -> b)
+    -> stream a
+    -> b
+/;
+
+(* introOf /i a b f s/. *)
+inference.
+unfold /folds/.
+typecheck.
+qed ();
+
+reductions
+/
+  folds a b f (cons _ h tf) --> 
+    let next t = tf in
+    f h (next (folds a b f t)) ;
+
+  unfolding folds
+  unrolling ffix
+/;
+
+lemma "maps_as_folds"
+/
+  forall i (a b : U i) (f : a -> b) .
+    exists (g : a -> future (stream b) -> stream b) .
+      forall (s : stream a) .
+        folds g s = maps f s : stream b
+/;
+
+intro /i a b f/.
+exists /fn x t . cons (f x) t/.
+apply /ffix/.
+intro /[IH] s/.
+unrollType /stream in s/.
+destruct /s/ /h t/.
+fold /cons h t at all/.
+destruct /t/ /[t]/.
+reduce //.
+compat.
+compat.
+auto.
+qed ();
+
+define /build {a b} f/
+/
+  ffix (fn mf (x : a) .
+      let next m = mf in
+      let next y = (f x) #2 in
+      cons ((f x) #1) (next (m y)))
+//
+  intersect i . forall (a b : U i) .
+    (a -> b & future a)
+    -> a
+    -> stream b
+/;
+
+inference.
+unfold /build/.
+typecheck.
+qed ();
+
+val red =
+makeReduction
+/
+  build a b f x -->
+    let next y = (f x) #2 in
+    cons b ((f x) #1) (next (build a b f y)) ;
+  
+    unfolding build
+    unrolling ffix
+/;
+
+Database.setUnroll (parseConstant /build/) (Reduction.user red);
+
+
+
+lemma "maps_as_build"
+/
+  forall i (a b : U i) (f : a -> b) .
+    exists (g : stream a -> b & future (stream a)) .
+      forall (s : stream a) .
+        build g s = maps f s : stream b
+/;
+
+intro /i a b f/.
+exists /fn s . (f (fst s), snd s)/.
+apply /ffix/.
+intro /[IH] s/.
+unrollType /stream in s/.
+unroll /build/.
+destruct /s/ /h t/.
+fold /cons h t at all/.
+destruct /t/ /[t]/.
+reduce //.
+compat.
+compat.
+auto.
+
+qed ();
+
+lemma "count_as_build"
+/
+  exists (g : nat -> nat & future nat) .
+    forall (n : nat) .
+      build g n = count n : stream nat
+/;
+
+exists /fn m . (m, next (succ m))/.
+apply /ffix/.
+intro /[IH] s/.
+(* unrollType /stream in s/. *)
+unroll /build/.
+unroll /count/.
+reduce //.
+compat.
+compat.
+auto.
+qed ();
