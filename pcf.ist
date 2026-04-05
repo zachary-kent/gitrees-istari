@@ -108,7 +108,7 @@ typedef
           has_type Gamma (Ifz M N P) sigma
 /;
 
-defineInd /{S} enter resolve/
+defineInd /S enter resolve/
 /
   traverse' : term -> S -> term of
   | Var i . fn s . resolve s i
@@ -123,47 +123,35 @@ defineInd /{S} enter resolve/
   intersect (i : level) . forall (S : U i) . (S -> S) -> (S -> nat -> term) -> term -> S -> term
 /;
 
-define /traverse enter resolve s M/
+define /traverse S enter resolve s M/
 /
-  traverse' enter resolve M s
+  traverse' S enter resolve M s
 //
-  intersect (i : level) (S : U i) . (S -> S) -> (S -> nat -> term) -> S -> term -> term
+  intersect (i : level) . forall (S : U i) . (S -> S) -> (S -> nat -> term) -> S -> term -> term
 /;
 
 unfold /traverse/.
-inference.
-repeatn 6 typecheck1.
-{
-  typecheck.
-}
-{
-  typecheck.
-}
-{
-  typecheck.
-}
-{
-  
-  typecheck
-}
+typecheck.
+qed ();
 
-typecheck >> inference >> auto.
-{
- auto
-}
-typechecker (); >> inference.
+val red = makeReduction
+/
+  traverse S enter resolve s M --> traverse' S enter resolve M s ;
 
+  unfolding traverse
+/;
 
-
+Database.setUnroll (parseConstant /traverse/) (Reduction.user red);
 
 lemma "traverse_var"
 /
   intersect (i : level) .
   forall (S : U i) (enter : S -> S) (resolve : S -> nat -> term) (s : S) (n : nat) .
-    `traverse S enter resolve (Var n) s = resolve s n : term
+    traverse S enter resolve s (Var n) = resolve s n : term
 /;
 
 intro /i S enter resolve s n/.
+unfold /traverse/.
 reduce //.
 auto.
 qed ();
@@ -179,12 +167,13 @@ lemma "traverse_parametric"
         (forall (s : S) (s' : S') . R s s' -> R (enter s) (enter' s')) ->
         (forall (s : S) (s' : S') (n : nat) . R s s' -> resolve s n = resolve' s' n : term) ->
         R s s' ->
-        `traverse S enter resolve t s = `traverse S' enter' resolve' t s' : term
+        traverse S enter resolve s t = traverse S' enter' resolve' s' t : term
 /;
 
-intro /i S S' R enter enter' resolve resolve' s s' t Hrelenter Hagree/.
+intro /i S S' R enter enter' resolve resolve' s s' M Hrelenter Hagree/.
 revert /s s'/.
-induction /t/ >> auto.
+unfold /traverse at all/.
+induction /M/ >> auto.
 {
   intro /n s s' Hrel/.
   auto.
@@ -219,16 +208,16 @@ lemma "traverse_compose"
 /
   intersect (i : level) .
     forall (S S' : U i) (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term) (resolve' : S' -> nat -> term) (s : S) (s' : S') (M : term) .
-      `traverse S enter resolve (`traverse S' enter' resolve' M s') s
-        = `traverse (S & S')
+      traverse S enter resolve s (traverse S' enter' resolve' s' M)
+        = traverse (S & S')
             (fn (p : S & S') . (enter (p #1), enter' (p #2)))
-            (fn (p : S & S') (n : nat) . `traverse S enter resolve (resolve' (p #2) n) (p #1))
-            M
-            (s, s') : term
+            (fn (p : S & S') (n : nat) . traverse S enter resolve (p #1) (resolve' (p #2) n))
+            (s, s') M : term
 /;
 
 intro /i S S' enter enter' resolve resolve' s s' M/.
 revert /s s'/.
+unfold /traverse at all/.
 induction /M/ >> auto.
 {
   intro /M IHM N IHN s s'/.

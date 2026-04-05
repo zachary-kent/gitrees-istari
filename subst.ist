@@ -8,36 +8,36 @@ Namespace.beginModule "Subst";
 define /SubstType i/
 /
   exists (term : U i) .
-  { var_traverse : (nat -> term) & (forall (S : U i) . (S -> S) -> (S -> nat -> term) -> S -> term -> term)
+  { var_traverse : (nat -> term) & (forall (S : U i) . (S -> S) -> (S -> nat -> term) -> term -> S -> term)
   |
     (
-      forall (S : U i) (enter : S -> S) (resolve : S -> nat -> term) (s : S) (n : nat) .
-        var_traverse #2 S enter resolve s (var_traverse #1 n) = resolve s n : term
+      forall (S : U i) (enter : S -> S) (resolve : S -> nat -> term) (n : nat) (s : S) .
+        var_traverse #2 S enter resolve (var_traverse #1 n) s = resolve s n : term
     )
     &
     (
-      forall (S S' : U i) (R : S -> S' -> U i) (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term) (resolve' : S' -> nat -> term) (s : S) (s' : S') (t : term) .
+      forall (S S' : U i) (R : S -> S' -> U i) (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term) (resolve' : S' -> nat -> term) (t : term) (s : S) (s' : S') .
       (forall (s : S) (s' : S') . R s s' -> R (enter s) (enter' s'))
       -> (forall (s : S) (s' : S') (n : nat) . R s s' -> resolve s n = resolve' s' n : term)
       -> R s s'
-      -> var_traverse #2 S enter resolve s t = var_traverse #2 S' enter' resolve' s' t : term
+      -> var_traverse #2 S enter resolve t s = var_traverse #2 S' enter' resolve' t s' : term
     )
     &
     (
-      forall (S : U i) (R : S -> U i) (enter : S -> S) (resolve : S -> nat -> term) (s : S) (t : term) .
+      forall (S : U i) (R : S -> U i) (enter : S -> S) (resolve : S -> nat -> term) (t : term) (s : S) .
       (forall (s : S) . R s -> R (enter s))
       -> (forall (s : S) (n : nat) . R s -> resolve s n = var_traverse #1 n : term)
       -> R s
-      -> var_traverse #2 S enter resolve s t = t : term
+      -> var_traverse #2 S enter resolve t s = t : term
     )
     &
     (
-      forall (S S' : U i) . forall (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term) (resolve' : S' -> nat -> term) (s : S) (s' : S') (t : term) .
-      var_traverse #2 S enter resolve s (var_traverse #2 S' enter' resolve' s' t)
+      forall (S S' : U i) . forall (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term) (resolve' : S' -> nat -> term) (t : term) (s : S) (s' : S') .
+      var_traverse #2 S enter resolve (var_traverse #2 S' enter' resolve' t s') s
         = var_traverse #2 (S & S')
           (fn (p : S & S') . (enter (p #1), enter' (p #2)))
-          (fn (p : S & S') (n : nat) . var_traverse #2 S enter resolve (p #1) (resolve' (p #2) n))
-          (s, s') t : term
+          (fn (p : S & S') (n : nat) . var_traverse #2 S enter resolve (resolve' (p #2) n) (p #1))
+          t (s, s') : term
     )
   }
 //
@@ -73,7 +73,7 @@ define /traverse substT/
 /
   substT #2 #2
 //
-  intersect (i : level) . forall (substT : SubstType i) . (forall (S : U i) . (S -> S) -> (S -> nat -> term substT) -> S -> term substT -> term substT) 
+  intersect (i : level) . forall (substT : SubstType i) . (forall (S : U i) . (S -> S) -> (S -> nat -> term substT) -> term substT -> S -> term substT)
 /;
 unfold /traverse, term at all/.
 typecheck.
@@ -82,12 +82,12 @@ qed();
 
 lemma "traverse_var"
 /
-  intersect (i : level) . forall (substT : SubstType i) (S : U i) (enter : S -> S) (resolve : S -> nat -> term substT) (s : S) (n : nat) .
-      traverse substT S enter resolve s (var substT n) = resolve s n : term substT
+  intersect (i : level) . forall (substT : SubstType i) (S : U i) (enter : S -> S) (resolve : S -> nat -> term substT) (n : nat) (s : S) .
+      traverse substT S enter resolve (var substT n) s = resolve s n : term substT
 /;
 intro /i [termT [[traverseT varT] Hsub]]/.
 unfold /term at all, traverse, var/.
-intro /S enter resolve s n/.
+intro /S enter resolve n s/.
 reduce /Hsub/.
 unhide.
 apply /Hsub/.
@@ -96,16 +96,16 @@ qed();
 lemma "traverse_parametric"
 /
   intersect (i : level) . forall (substT : SubstType i) .
-  intersect (S S' : U i) . forall (R : S -> S' -> U i) (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term substT) (resolve' : S' -> nat -> term substT) (s : S) (s' : S') (t : term substT) .
+  intersect (S S' : U i) . forall (R : S -> S' -> U i) (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term substT) (resolve' : S' -> nat -> term substT) (t : term substT) (s : S) (s' : S') .
   (forall (s : S) (s' : S') . R s s' -> R (enter s) (enter' s'))
   -> (forall (s : S) (s' : S') (n : nat) . R s s' -> resolve s n = resolve' s' n : term substT)
   -> R s s'
-  -> traverse substT S enter resolve s t = traverse substT S' enter' resolve' s' t : term substT
+  -> traverse substT S enter resolve t s = traverse substT S' enter' resolve' t s' : term substT
 /;
 intro /i [termT [[traverseT varT] Hsub]]/.
 unfold /term at all, traverse at all/.
 reduce /Hsub/.
-intro /S S' R enter enter' resolve resolve' s s' t H1 H2 H3/.
+intro /S S' R enter enter' resolve resolve' t s s' H1 H2 H3/.
 unhide.
 apply /Hsub/ >> auto.
 qed();
@@ -113,15 +113,15 @@ qed();
 lemma "traverse_id"
 /
   intersect (i : level) . forall (substT : SubstType i) .
-  intersect (S : U i) . forall (R : S -> U i) (enter : S -> S) (resolve : S -> nat -> term substT) (s : S) (t : term substT) .
+  intersect (S : U i) . forall (R : S -> U i) (enter : S -> S) (resolve : S -> nat -> term substT) (t : term substT) (s : S) .
     (forall (s : S) . R s -> R (enter s))
     -> (forall (s : S) (n : nat) . R s -> resolve s n = var substT n : term substT)
     -> R s
-    -> traverse substT S enter resolve s t = t : term substT
+    -> traverse substT S enter resolve t s = t : term substT
 /;
 intro /i [termT [[traverseT varT] Hsub]]/.
 unfold /term at all, traverse, var/.
-intro /S R enter resolve s t H1 H2 H3/.
+intro /S R enter resolve t s H1 H2 H3/.
 reduce /Hsub/.
 unhide.
 apply /Hsub/ >> auto.
@@ -130,17 +130,17 @@ qed();
 lemma "traverse_compose"
 /
   intersect (i : level) . forall (substT : SubstType i) .
-  intersect (S S' : U i) . forall (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term substT) (resolve' : S' -> nat -> term substT) (s : S) (s' : S') (t : term substT) .
-  traverse substT S enter resolve s (traverse substT S' enter' resolve' s' t)
+  intersect (S S' : U i) . forall (enter : S -> S) (enter' : S' -> S') (resolve : S -> nat -> term substT) (resolve' : S' -> nat -> term substT) (t : term substT) (s : S) (s' : S') .
+  traverse substT S enter resolve (traverse substT S' enter' resolve' t s') s
     = traverse substT (S & S')
       (fn (p : S & S') . (enter (p #1), enter' (p #2)))
-      (fn (p : S & S') (n : nat) . traverse substT S enter resolve (p #1) (resolve' (p #2) n))
-      (s, s') t : term substT
+      (fn (p : S & S') (n : nat) . traverse substT S enter resolve (resolve' (p #2) n) (p #1))
+      t (s, s') : term substT
 /;
 intro /i [termT [[traverseT varT] Hsub]]/.
 unfold /term at all, traverse at all/.
 reduce /Hsub/.
-intro /S S' enter enter' resolve resolve' s s' t/.
+intro /S S' enter enter' resolve resolve' t s s'/.
 unhide.
 apply /Hsub/ >> auto.
 qed();
@@ -221,7 +221,7 @@ qed();
 definerec /shift_sub substT s/
 /
   case s : sub of
-  | dot t s' . dot ((traverse substT nat) succ (shift_var substT) 0 t) (shift_sub substT s')
+  | dot t s' . dot ((traverse substT nat) succ (shift_var substT) t 0) (shift_sub substT s')
   | sh m . sh (succ m)
 //
   intersect (i : level) . forall (substT : SubstType i) . sub substT -> sub substT
@@ -238,18 +238,19 @@ qed();
 
 reductions
 /
-  shift_sub substT (dot t s') --> dot ((traverse substT nat) succ (shift_var substT) 0 t) (shift_sub substT s') ;
+  shift_sub substT (dot t s') --> dot ((traverse substT nat) succ (shift_var substT) t 0) (shift_sub substT s') ;
   shift_sub substT (sh m) --> sh (succ m) ;
   unrolling shift_sub
 /;
 
-define /subst substT/
+define /subst substT s t/
 /
-  (traverse substT (sub substT))
+  traverse substT (sub substT)
   (fn (s' : sub substT) .
     dot (var substT 0) (shift_sub substT s')
   )
   (project substT)
+  t s
 //
   intersect (i : level) . forall (substT : SubstType i) . sub substT -> term substT -> term substT
 /;
@@ -312,7 +313,7 @@ lemma "subst_eq_traverse"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (s : sub substT) (t : term substT) .
-  subst substT s t = traverse substT (sub substT) (under substT 1) (project substT) s t : term substT
+  subst substT s t = traverse substT (sub substT) (under substT 1) (project substT) t s : term substT
 /;
 intro /i substT s t/.
 unfold /subst/.
@@ -489,7 +490,7 @@ qed();
 
 definerec /nshift_term substT n t/
 /
-  nat_case n t (fn n' . traverse substT nat succ (shift_var substT) 0 (nshift_term substT n' t))
+  nat_case n t (fn n' . traverse substT nat succ (shift_var substT) (nshift_term substT n' t) 0)
 //
   intersect (i : level) . forall (substT : SubstType i) . nat -> term substT -> term substT
 /;
@@ -508,7 +509,7 @@ qed();
 reductions
 /
 nshift_term substT (zero) t --> t ;
-nshift_term substT (succ n) t --> traverse substT nat succ (shift_var substT) zero (nshift_term substT n t) ;
+nshift_term substT (succ n) t --> traverse substT nat succ (shift_var substT) (nshift_term substT n t) zero ;
 unrolling nshift_term
 /;
 
@@ -518,7 +519,7 @@ lemma "shift_term_var"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (n m : nat) .
-  traverse substT S succ (shift_var substT) n (var substT m) = shift_var substT n m : term substT
+  traverse substT S succ (shift_var substT) (var substT m) n = shift_var substT n m : term substT
 /;
 intro /i substT n m/.
 rewrite /-> traverse_var/.
@@ -555,7 +556,7 @@ lemma "nshift_term_succ_inner"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (n : nat) (t : term substT) .
-  traverse substT nat succ (shift_var substT) 0 (nshift_term substT n t) = nshift_term substT n (traverse substT nat succ (shift_var substT) 0 t) : term substT
+  traverse substT nat succ (shift_var substT) (nshift_term substT n t) 0 = nshift_term substT n (traverse substT nat succ (shift_var substT) t 0) : term substT
 /;
 intro /i substT n t/.
 transitivity /nshift_term substT (n + 1) t/.
@@ -576,8 +577,8 @@ lemma "shift_term_commute"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (n : nat) (t : term substT) .
-  traverse substT nat succ (shift_var substT) (succ n) (traverse substT nat succ (shift_var substT) 0 t) =
-  traverse substT nat succ (shift_var substT) 0 (traverse substT nat succ (shift_var substT) n t) : term substT
+  traverse substT nat succ (shift_var substT) (traverse substT nat succ (shift_var substT) t 0) (succ n) =
+  traverse substT nat succ (shift_var substT) (traverse substT nat succ (shift_var substT) t n) 0 : term substT
 /;
 intro /i substT n t/.
 rewrite /-> traverse_compose at all/.
@@ -653,7 +654,7 @@ lemma "nshift_term_commute"
   intersect (i : level) . forall (substT : SubstType i) .
   forall (m n : nat) (t : term substT) .
   n <= m
-  -> traverse substT nat succ (shift_var substT) m (nshift_term substT n t) = nshift_term substT n (traverse substT nat succ (shift_var substT) (m - n) t) : term substT
+  -> traverse substT nat succ (shift_var substT) (nshift_term substT n t) m = nshift_term substT n (traverse substT nat succ (shift_var substT) t (m - n)) : term substT
 /;
 intro /i substT m n/.
 revert /m/.
@@ -671,7 +672,7 @@ lemma "nshift_term_commute_eq"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (n : nat) (t : term substT) .
-  traverse substT nat succ (shift_var substT) n (nshift_term substT n t) = nshift_term substT (succ n) t : term substT
+  traverse substT nat succ (shift_var substT) (nshift_term substT n t) n = nshift_term substT (succ n) t : term substT
 /;
 intro /i substT n t/.
 reduce //.
@@ -917,10 +918,10 @@ lemma "subst_shift_sub_helper"
       nat
       succ
       (shift_var substT)
-      n
       ((fnind sub_fn : forall (v0 : sub [substT]) . term substT of
         | dot t v0 . t
         | sh i1 . var substT i1) (nshift_sub substT n x))
+      n
   : term substT
 /;
 intro /i substT s n j x Hb/.
@@ -946,7 +947,7 @@ lemma "subst_shift_sub"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (s : sub substT) (t : term substT) .
-    subst substT (shift_sub substT s) t = traverse substT nat succ (shift_var substT) 0 (subst substT s t) : term substT
+    subst substT (shift_sub substT s) t = traverse substT nat succ (shift_var substT) (subst substT s t) 0 : term substT
 /;
 intro /i substT s t/.
 unfold /subst at all/.
@@ -999,7 +1000,7 @@ lemma "subst_dot_shift_term"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (t : term substT) (s : sub substT) (t' : term substT) .
-    subst substT (dot t s) (traverse substT nat succ (shift_var substT) 0 t') = subst substT s t' : term substT
+    subst substT (dot t s) (traverse substT nat succ (shift_var substT) t' 0) = subst substT s t' : term substT
 /;
 intro /i substT t s t'/.
 unfold /subst at all/.
@@ -1048,7 +1049,7 @@ lemma "shift_term_eq_subst_under_sh"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (t : term substT) (n : nat) .
-    traverse substT nat succ (shift_var substT) n t = subst substT (under substT n (sh 1)) t : term substT
+    traverse substT nat succ (shift_var substT) t n = subst substT (under substT n (sh 1)) t : term substT
 /;
 intro /i substT t n/.
 unfold /subst/.
@@ -1089,7 +1090,7 @@ lemma "shift_term_eq_sh"
 /
   intersect (i : level) . forall (substT : SubstType i) .
   forall (t : term substT) .
-    traverse substT nat succ (shift_var substT) 0 t = subst substT (sh 1) t : term substT
+    traverse substT nat succ (shift_var substT) t 0 = subst substT (sh 1) t : term substT
 /;
 intro /i substT t/.
 apply /shift_term_eq_subst_under_sh/.
