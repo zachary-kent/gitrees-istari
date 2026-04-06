@@ -240,6 +240,26 @@ unroll /ffix/.
 reflexivity.
 qed ();
 
+(* Lemma 4.2 *)
+lemma "if_reduce"
+/
+  forall (Gamma : list ty) (gamma : interp_ctx Gamma) (L L' M N : term) (sigma : ty)
+         (derivL : has_type Gamma L Nat) (derivL' : has_type Gamma L' Nat) (derivM : has_type Gamma M sigma) (derivN : has_type Gamma N sigma) .
+            interp derivL gamma = later (interp derivL' gamma) : interp_type Nat ->
+              interp (IfzTyped Gamma L M N sigma derivL derivM derivN) gamma = 
+              delta sigma (interp (IfzTyped Gamma L' M N sigma derivL' derivM derivN) gamma) : interp_type sigma
+
+/;
+
+intro /Gamma gamma L L' M N sigma derivL derivL' derivM derivN Hstep/ >> auto.
+inference.
+reduce //.
+rewrite /-> Hstep/ >> auto.
+qed ();
+
+
+
+
 lemma "traverse_var"
 /
   intersect (i : level) .
