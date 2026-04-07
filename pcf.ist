@@ -258,8 +258,6 @@ rewrite /-> Hstep/ >> auto.
 qed ();
 
 
-
-
 lemma "traverse_var"
 /
   intersect (i : level) .
@@ -424,6 +422,304 @@ typedef
   | step_ifz_beta_succ : forall (M N : term) (n : nat) . step (Ifz (Num (succ n)) M N) false N
   | step_ifz_guard : forall (M M' N P : term) (k : bool) . step M k M' -> step (Ifz M N P) k (Ifz M' N P)
 /;
+
+define /subst_typed sub Gamma Delta/
+/
+  forall (sigma : ty) (n : nat) .
+    bound_at sigma Gamma n ->
+      has_type Delta (Subst.project pcfSubstT sub n) sigma
+//
+  intersect (i : level) . Subst.sub pcfSubstT -> list ty -> list ty -> U i
+/;
+
+unfold /subst_typed/.
+typecheck.
+qed ();
+
+setOpacity /subst_typed/ Constant.SOFT;
+
+reductions
+/
+  Subst.subst (pcfSubstT) sub (Num n) --> Num n ;
+  Subst.subst (pcfSubstT) sub (Lam M) --> Lam (Subst.subst pcfSubstT (Subst.under pcfSubstT 1 sub) M) ;
+  Subst.subst (pcfSubstT) sub (App M N) --> App (Subst.subst pcfSubstT sub M) (Subst.subst pcfSubstT sub N) ;
+  Subst.subst (pcfSubstT) sub (Fix M) --> Fix (Subst.subst pcfSubstT sub M) ;
+  Subst.subst (pcfSubstT) sub (Succ M) --> Succ (Subst.subst pcfSubstT sub M) ;
+  Subst.subst (pcfSubstT) sub (Pred M) --> Pred (Subst.subst pcfSubstT sub M) ;
+  Subst.subst (pcfSubstT) sub (Ifz M N P) --> Ifz (Subst.subst pcfSubstT sub M) (Subst.subst pcfSubstT sub N) (Subst.subst pcfSubstT sub P);
+
+
+  unfolding Subst.subst pcfSubstT Subst.traverse
+  unrolling Subst.under
+/;
+
+
+(* Projecting after shifting a substitution is equal to projecting out first and then shifting *)
+lemma "project_shift_sub_comm"
+/
+  forall (sub : Subst.sub pcfSubstT) (k : nat) .
+    Subst.project pcfSubstT (Subst.shift_sub pcfSubstT sub) k = Subst.subst pcfSubstT (Subst.sh 1) (Subst.project pcfSubstT sub k) : term
+/;
+
+inference.
+intro /sub k/.
+rewrite /-> Subst.shift_sub_eq_compose_sh pcfSubstT sub/.
+rewrite /-> Subst.project_compose pcfSubstT/.
+reflexivity.
+qed ();
+
+define /renaming sub Gamma Delta/
+/
+  forall (sigma : ty) (n : nat) .
+    bound_at sigma Gamma n ->
+     exists (m : nat) .
+      Subst.project pcfSubstT sub n = Var m : term & bound_at sigma Delta m
+//
+  intersect (i : level) . Subst.sub pcfSubstT -> list ty -> list ty -> U i
+/;
+
+unfold /renaming/.
+typecheck.
+qed ();
+
+
+(* If Gamma |- sub : Delta and Gamma |- M : sigma, then Delta |- \hat{sub}(M) : tau *)
+lemma "renaming_preserves_type"
+/
+  forall Gamma M sigma .
+    has_type Gamma M sigma ->
+    forall sub Delta .
+      renaming sub Gamma Delta ->
+      has_type Delta (Subst.subst pcfSubstT sub M) sigma
+/;
+
+inference.
+intro /Gamma M sigma Hty/.
+induction /Hty/.
+{
+  (* Var case *)
+  intro /Gamma idx sigma Hbound sub Delta Hrename/.
+  unfold /Subst.subst/.
+  unfold /pcfSubstT/.
+  unfold /Subst.traverse/.
+  reduce //.
+  unfold /renaming in Hrename/.
+  so /Hrename _ _ Hbound/ /m Hmap Bound/.
+  rewrite /-> Hmap/.
+  apply /VarTyped/.
+  auto.
+}
+{
+  (* Num case *)
+  intro /Gamma n sub Delta Hrename/.
+  apply /NumTyped/.
+}
+{
+  (* Lam case *)
+  intro /Gamma sigma tau M Hty IH sub Delta Hrename/.
+  apply /LamTyped/.
+  apply /IH/.
+  unfold /renaming/.
+  intro /sigma' n Hbound/.
+  destruct /n/ / | k/.
+  {
+    inversion /Hbound/.
+    subst /sigma'/.
+    reduce //.
+    exists /zero/.
+    split >> auto.
+    apply /Here/.
+  }
+  {
+    inversion /Hbound/.
+    reduce //.
+    unfold /renaming in Hrename/.
+    so /Hrename _ _ v0/ /m Hmap Hboundmap/.
+    rewrite /-> project_shift_sub_comm/.
+    exists /succ m/.
+    rewrite /-> Hmap/.
+    reduce //.
+    rewrite /Var m = Subst.var pcfSubstT m : term/.
+    rewrite /-> Subst.subst_var/.
+    rewrite /-> Subst.project_sh/.
+    reduce //.
+    split >> auto.
+    apply /There/.
+    auto.
+  }
+}
+{
+  intro /Gamma sigma tau M N HtyM IHM HtyN IHN sub Delta Hrename/.
+  reduce //.
+  apply /AppTyped _ sigma/.
+  {
+    apply /IHM/ >> auto.
+  }
+  {
+    apply /IHN/ >> auto.
+  }
+}
+{
+  intro /Gamma sigma M Hty IH sub Delta Hrename/.
+  apply /FixTyped/.
+  apply /IH/.
+  auto.
+}
+{
+  intro /Gamma M Hty IH sub Delta Hrenaming/.
+  apply /SuccTyped/.
+  apply /IH/.
+  auto.
+}
+{
+  intro /Gamma M Hty IH sub Delta Hrenaming/.
+  apply /PredTyped/.
+  apply /IH/.
+  auto. 
+}
+{
+  intro /Gamma M N P sigma HtyM IHM HtyN IHN HtyP IHP sub Delta Hrename/.
+  apply /IfzTyped/ >> auto.
+}
+qed ();
+
+
+
+
+lemma "weakening"
+/
+  forall (Delta : list ty) (M : term) (tau sigma : ty) .
+    has_type Delta M tau ->
+      has_type (sigma :: Delta) (Subst.subst pcfSubstT (Subst.sh 1) M) tau
+/;
+
+intro /Delta M tau sigma Hty/.
+induction /Hty/.
+{
+  intro /Gamma idx tau Hbound/.
+  reduce //.
+  unfold /Subst.subst/.
+  unfold /pcfSubstT/.
+  unfold /Subst.traverse/.
+  reduce //.
+  rewrite /-> Subst.project_sh pcfSubstT/.
+  reduce //.
+  apply /VarTyped/.
+  apply /There/.
+  auto.
+}
+{
+  intro /Gamma n/.
+  apply /NumTyped/.
+}
+{
+  intro /Gamma sigma' tau M Hty IH/.
+
+  apply /LamTyped/.
+
+}
+
+  unfold /Subst.subst, pcfSubstT, Subst.traverse/;
+
+
+  apply /VarTyped/.
+  apply /There/.
+
+}
+
+lemma "subst_typed_under"
+/
+  forall (sub : Subst.sub pcfSubstT) (Gamma Delta : list ty) (sigma : ty) .
+    subst_typed sub Gamma Delta ->
+      subst_typed (Subst.dot (Var 0) (Subst.shift_sub pcfSubstT sub)) (sigma :: Gamma) (sigma :: Delta)
+/;
+
+unfold /subst_typed at all/.
+intro /sub Gamma Delta sigma Hsubty tau n Hbound/.
+destruct /n/ / | k/.
+{
+  reduce //.
+  inversion /Hbound/.
+  subst /tau/.
+  apply /VarTyped/.
+  apply /Here/.
+}
+{
+  reduce //.
+  inversion /Hbound/.
+
+}
+
+
+lemma "subst_preserves_type"
+/
+  forall (Gamma : list ty) (M : term) (sigma : ty) .
+    has_type Gamma M sigma ->
+      forall (sub : Subst.sub pcfSubstT) (Delta : list ty) .
+        subst_typed sub Gamma Delta ->
+          has_type Delta (Subst.subst pcfSubstT sub M) sigma
+/;
+
+intro /Gamma M sigma Hty/.
+induction /Hty/.
+{
+  intro /Gamma idx sigma Hbound sub Delta Hsubty/.
+  rewrite /-> Subst.subst_var pcfSubstT/.
+  unfold /subst_typed in Hsubty/.
+  auto.
+}
+{
+  intro /Gamma n sub Delta Hsubty/.
+  reduce //.
+  apply /NumTyped/.
+}
+{
+  intro /Gamma sigma tau M Hty IH sub Delta Hsubty/.
+  reduce //.
+  apply /LamTyped/.
+
+  intro /Gamma idx sigma Hbound sub Delta Hsubty/.
+
+}
+  auto.
+
+
+  unfold /pcfSubstT/.
+  reduce //.
+  unfold /Subst.subst/.
+  reduce //.
+  
+}
+
+  forall (sub : Subst.sub pcfSubstT) (Gamma Delta : list ty) (M : term) (sigma : ty) .
+    subst_typed sub Gamma Delta ->
+      has_type Gamma M sigma ->
+        has_type Delta (Subst.subst pcfSubstT sub M) sigma
+/;
+
+intro /sub Gamma Delta M sigma Hsubty Hty/.
+revert /Hsubty sub/.
+
+lemma "subst_preserves_type"
+/
+  forall (Gamma : list ty) (sigma tau : ty) (M N : term) .
+    has_type (sigma :: Gamma) M tau ->
+      has_type Gamma N sigma ->
+        has_type Gamma (Subst.subst pcfSubstT (Subst.dot N (Subst.sh 0)) M) tau
+/;
+
+intro /Gamma sigma tau M/.
+induction /M/.
+{
+  intro /idx N HM HN/.
+  inversion /HM/.
+  destruct 
+  apply /VarTyped/.
+
+}
+
+
+
 
 
 lemma "fix_interp_unfold" : 
