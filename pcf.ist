@@ -1197,3 +1197,40 @@ induction /deriv/.
   typechecker ();
 }
 qed ();
+
+lemma "semantic_weakening"
+/
+  forall Gamma M sigma tau
+    (deriv : has_type Gamma M tau)
+    (deriv' : has_type (sigma :: Gamma) (Subst.subst pcfSubstT (Subst.sh 1) M) tau)
+    (gamma : interp_ctx Gamma) (V : interp_type sigma) .
+      interp deriv gamma = interp deriv' (V, gamma) : interp_type tau
+/;
+inference.
+intro /Gamma M sigma tau deriv deriv' gamma V/.
+
+apply /semantic_renaming_eq/.
+{
+  unfold /renaming/.
+  intro /sigma' n Hbound/.
+  exists /succ n/.
+  rewrite /-> Subst.project_sh/.
+  reduce //.
+  split >> auto.
+  apply /There/.
+  assumption.
+}
+{
+  unfold /semantic_renaming/.
+  intro /n m sigma' Hbound Hbound' Hmap/.
+  rewrite /-> Subst.project_sh in Hmap/.
+  reduce /Hmap/.
+  injection /Hmap/.
+  substAll.
+  destructThinCautious /Hbound'/ /{}/.
+  reduce //.
+  substAll >> auto.
+  reintro /Hbound' Hmap/.
+  apply /bound_at_irr/.
+}
+qed ();
